@@ -11,7 +11,7 @@ const app = express();
 
 // Middleware
 const corsOptions = {
-  origin: [process.env.VITE_API_URL],
+  origin: [process.env.VITE_API_URL, 'https://moneyinfinite.netlify.app/'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
