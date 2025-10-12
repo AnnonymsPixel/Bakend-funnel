@@ -84,7 +84,7 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: 'No authentication token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key-change-in-production');
+    const decoded = jwt.verify(token, import.meta.env.JWT_SECRET || 'ba1b3e2d3180f5ccd788a3f772f2ad600697deb329cb2081315985430483ace891154b30b1eb1a1ee185ac90575e4449bae0419b51e4833817ef55740f8e0b92');
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -160,6 +160,8 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔍 Login attempt:', { email, passwordLength: password?.length });
+
     // Validation
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
@@ -167,15 +169,26 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Find user
     const user = await User.findOne({ email });
+    console.log('👤 User found:', !!user, 'Email:', email);
+    
     if (!user) {
+      console.log('❌ User not found for email:', email);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    console.log('🔐 Stored password hash:', user.password.substring(0, 30) + '...');
+    console.log('🔐 Comparing password...');
+
     // Check password
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log('✅ Password match result:', isMatch);
+
     if (!isMatch) {
+      console.log('❌ Password does not match for user:', email);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
+
+    console.log('✅ Authentication successful for:', email);
 
     // Generate token
     const token = jwt.sign(
@@ -194,7 +207,7 @@ app.post('/api/auth/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: 'Server error during login' });
   }
 });
