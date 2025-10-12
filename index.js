@@ -4,80 +4,31 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { ImageOff } from 'lucide-react';
 
 dotenv.config();
 
 const app = express();
 
-// ============ CORS CONFIGURATION - PRODUCTION READY ============
-const allowedOrigins = [
-  'http://localhost:5500',
-  'http://127.0.0.1:5500',
-  'http://localhost:3000',
-  'http://127.0.0.1:3000',
-  'http://localhost:8080',
-  'http://127.0.0.1:8080',
-  process.env.FRONTEND_URL, // Add your frontend URL from .env
-];
-
+// Middleware
 const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return callback(null, true);
-    }
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log('⚠️  CORS rejected origin:', origin);
-      // For development, allow all. For production, be strict.
-      if (process.env.NODE_ENV === 'development') {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    }
-  },
+  origin: [process.env.VITE_API_URL],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Type'],
-  optionsSuccessStatus: 200,
-  maxAge: 86400 // 24 hours
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 };
-
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Preflight
-
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// ============ CONSTANTS ============
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/finance-tracker';
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-console.log(`🌍 Environment: ${NODE_ENV}`);
-console.log(`🔧 Port: ${PORT}`);
-
-// ============ MONGODB CONNECTION ============
-mongoose.connect(MONGO_URI, {
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/finance-tracker', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => {
-  console.log('✅ MongoDB Connected');
-  console.log('📍 Database:', MONGO_URI.split('/').pop()?.split('?')[0]);
-})
-.catch((err) => {
-  console.error('❌ MongoDB Connection Error:', err.message);
-  process.exit(1);
-});
+.then(() => console.log('✅ MongoDB Connected'))
+.catch((err) => console.error('❌ MongoDB Connection Error:', err));
 
-// ============ SCHEMAS ============
-
+// User Schema
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
@@ -104,6 +55,7 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// Expense Schema
 const expenseSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -130,18 +82,16 @@ const expenseSchema = new mongoose.Schema({
 
 const Expense = mongoose.model('Expense', expenseSchema);
 
-// ============ AUTH MIDDLEWARE ============
-
+// Auth Middleware
 const authMiddleware = async (req, res, next) => {
   try {
-    const authHeader = req.header('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
+    const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (!token) {
       return res.status(401).json({ error: 'No authentication token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, import.meta.env.JWT_SECRET || 'ba1b3e2d3180f5ccd788a3f772f2ad600697deb329cb2081315985430483ace891154b30b1eb1a1ee185ac90575e4449bae0419b51e4833817ef55740f8e0b92');
     const user = await User.findById(decoded.userId);
 
     if (!user) {
@@ -152,21 +102,18 @@ const authMiddleware = async (req, res, next) => {
     req.userId = user._id;
     next();
   } catch (error) {
-    console.error('Auth error:', error.message);
-    const statusCode = error.name === 'TokenExpiredError' ? 401 : 401;
-    res.status(statusCode).json({ 
-      error: 'Invalid or expired authentication token',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(401).json({ error: 'Invalid authentication token' });
   }
 };
 
 // ============ AUTH ROUTES ============
 
+// Register
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
+    // Validation
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'All fields are required' });
     }
@@ -175,13 +122,16 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
+    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Create user
     const user = new User({
       name,
       email,
@@ -190,9 +140,10 @@ app.post('/api/auth/register', async (req, res) => {
 
     await user.save();
 
+    // Generate token
     const token = jwt.sign(
       { userId: user._id },
-      JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key-change-in-production',
       { expiresIn: '7d' }
     );
 
@@ -207,36 +158,49 @@ app.post('/api/auth/register', async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ 
-      error: 'Server error during registration',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Server error during registration' });
   }
 });
 
+// Login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log('🔍 Login attempt:', { email, passwordLength: password?.length });
+
+    // Validation
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
 
+    // Find user
     const user = await User.findOne({ email });
+    console.log('👤 User found:', !!user, 'Email:', email);
     
     if (!user) {
+      console.log('❌ User not found for email:', email);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    console.log('🔐 Stored password hash:', user.password.substring(0, 30) + '...');
+    console.log('🔐 Comparing password...');
+
+    // Check password
     const isMatch = await bcrypt.compare(password, user.password);
+    console.log('✅ Password match result:', isMatch);
 
     if (!isMatch) {
+      console.log('❌ Password does not match for user:', email);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    console.log('✅ Authentication successful for:', email);
+
+    // Generate token
     const token = jwt.sign(
       { userId: user._id },
-      JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key-change-in-production',
       { expiresIn: '7d' }
     );
 
@@ -250,14 +214,12 @@ app.post('/api/auth/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ 
-      error: 'Server error during login',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    console.error('❌ Login error:', error);
+    res.status(500).json({ error: 'Server error during login' });
   }
 });
 
+// Get current user
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   res.json({
     user: {
@@ -270,25 +232,24 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 
 // ============ EXPENSE ROUTES ============
 
+// Get all expenses for user
 app.get('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const expenses = await Expense.find({ userId: req.userId }).sort({ date: -1 });
     res.json(expenses);
   } catch (error) {
     console.error('Get expenses error:', error);
-    res.status(500).json({ 
-      error: 'Failed to fetch expenses',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to fetch expenses' });
   }
 });
 
+// Create expense
 app.post('/api/expenses', authMiddleware, async (req, res) => {
   try {
     const { description, amount, category, date } = req.body;
 
     if (!description || !amount || !category) {
-      return res.status(400).json({ error: 'Description, amount, and category are required' });
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
     const expense = new Expense({
@@ -296,20 +257,18 @@ app.post('/api/expenses', authMiddleware, async (req, res) => {
       description,
       amount: parseFloat(amount),
       category,
-      date: date ? new Date(date) : new Date()
+      date: date || new Date()
     });
 
     await expense.save();
     res.status(201).json(expense);
   } catch (error) {
     console.error('Create expense error:', error);
-    res.status(500).json({ 
-      error: 'Failed to create expense',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to create expense' });
   }
 });
 
+// Update expense
 app.put('/api/expenses/:id', authMiddleware, async (req, res) => {
   try {
     const { description, amount, category, date } = req.body;
@@ -320,22 +279,20 @@ app.put('/api/expenses/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Expense not found' });
     }
 
-    if (description) expense.description = description;
-    if (amount !== undefined) expense.amount = parseFloat(amount);
-    if (category) expense.category = category;
-    if (date) expense.date = new Date(date);
+    expense.description = description || expense.description;
+    expense.amount = amount !== undefined ? parseFloat(amount) : expense.amount;
+    expense.category = category || expense.category;
+    expense.date = date || expense.date;
 
     await expense.save();
     res.json(expense);
   } catch (error) {
     console.error('Update expense error:', error);
-    res.status(500).json({ 
-      error: 'Failed to update expense',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to update expense' });
   }
 });
 
+// Delete expense
 app.delete('/api/expenses/:id', authMiddleware, async (req, res) => {
   try {
     const expense = await Expense.findOneAndDelete({ _id: req.params.id, userId: req.userId });
@@ -347,41 +304,17 @@ app.delete('/api/expenses/:id', authMiddleware, async (req, res) => {
     res.json({ message: 'Expense deleted successfully' });
   } catch (error) {
     console.error('Delete expense error:', error);
-    res.status(500).json({ 
-      error: 'Failed to delete expense',
-      details: NODE_ENV === 'development' ? error.message : undefined
-    });
+    res.status(500).json({ error: 'Failed to delete expense' });
   }
 });
 
-// ============ HEALTH CHECK ============
-
+// Health check
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'OK',
-    message: 'Server is running',
-    port: PORT,
-    environment: NODE_ENV,
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: 'OK', message: 'Server is running' });
 });
 
-// ============ ERROR HANDLING ============
-
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    error: 'Internal server error',
-    message: NODE_ENV === 'development' ? err.message : undefined
-  });
-});
-
-// ============ START SERVER ============
+const PORT = process.env.PORT;
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on port ${PORT}`);
-  console.log(`📍 API URL: http://localhost:${PORT}`);
-  console.log(`🔗 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🗄️  MongoDB connected`);
-  console.log(`\n✅ Server ready for requests\n`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
