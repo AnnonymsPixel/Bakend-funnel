@@ -90,7 +90,7 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: 'No authentication token provided' });
     }
 
-    const decoded = jwt.verify(token, import.meta.env.JWT_SECRET || 'ba1b3e2d3180f5ccd788a3f772f2ad600697deb329cb2081315985430483ace891154b30b1eb1a1ee185ac90575e4449bae0419b51e4833817ef55740f8e0b92');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'ba1b3e2d3180f5ccd788a3f772f2ad600697deb329cb2081315985430483ace891154b30b1eb1a1ee185ac90575e4449bae0419b51e4833817ef55740f8e0b92');
     const user = await User.findById(decoded.userId);
 
     if (!user) {
